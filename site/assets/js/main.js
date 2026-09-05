@@ -245,7 +245,7 @@
           const d = Math.hypot(dx, dy);
           if (d > LINK) continue;
           const o = (1 - d / LINK) * 0.3;
-          ctx.strokeStyle = `rgba(232,150,58,${o.toFixed(3)})`;
+          ctx.strokeStyle = `rgba(255,255,255,${o.toFixed(3)})`;
           ctx.beginPath();
           ctx.moveTo(a.x, a.y);
           ctx.lineTo(b.x, b.y);
@@ -257,7 +257,7 @@
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
         const tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 0.0012 + n.p));
-        ctx.fillStyle = `rgba(244,198,122,${(0.5 * tw).toFixed(3)})`;
+        ctx.fillStyle = `rgba(255,255,255,${(0.5 * tw).toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
         ctx.fill();
@@ -288,6 +288,479 @@
 
     resize();
     raf = requestAnimationFrame(draw);
+  }
+
+  /* ======================================================================
+     8b. WebGL geometric hero — rotating wireframe HANA sphere (Three.js)
+         Graceful no-op if Three.js failed to load or WebGL is unavailable.
+     ====================================================================== */
+  function heroGeometry() {
+    const cvs = $("[data-gl]");
+    if (!cvs || REDUCED) return;
+    if (typeof THREE === "undefined") return;
+
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: cvs, alpha: true, antialias: true });
+    } catch (e) { return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(0, 0, 10);
+
+    const glow = new THREE.Color(0x57d9ff);
+    const ink = new THREE.Color(0xede8e1);
+
+    const group = new THREE.Group();
+    scene.add(group);
+
+    /* -- shared builders ------------------------------------------------ */
+    const lineMat = (color, opacity) =>
+      new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: opacity });
+    const solidMat = (color, opacity) =>
+      new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity });
+
+    // wireframe outline of a solid (clean silhouette + facet edges)
+    const edges = (geo, color, opacity) =>
+      new THREE.LineSegments(new THREE.EdgesGeometry(geo), lineMat(color, opacity));
+
+    const ring = (radius, thickness, color, opacity) =>
+      new THREE.Mesh(new THREE.TorusGeometry(radius, thickness, 8, 128), solidMat(color, opacity));
+
+    // drifting node points on a spherical shell — the motif every page shares
+    function shell(count, radius, jitter, size, opacity) {
+      const pos = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const r = radius + (Math.random() - 0.5) * jitter;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+        pos[i * 3 + 2] = r * Math.cos(phi);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      return new THREE.Points(g, new THREE.PointsMaterial({
+        color: glow, size: size, transparent: true,
+        opacity: opacity === undefined ? 0.85 : opacity, sizeAttenuation: true
+      }));
+    }
+
+    /* -- per-page form --------------------------------------------------
+       Each page carries its own shape via data-gl="<variant>"; they share
+       the same wireframe language so the site still reads as one system. */
+    const spin = [];                       // [object, dx, dy, dz] each frame
+    const variant = cvs.dataset.gl || "orb";
+
+    if (variant === "shard") {
+      // Company — angular crystal, few clean planes
+      const outer = edges(new THREE.OctahedronGeometry(3.7, 0), glow, 0.72);
+      const core = edges(new THREE.OctahedronGeometry(2.0, 1), ink, 0.36);
+      const r1 = ring(4.3, 0.011, glow, 0.5);
+      r1.rotation.x = Math.PI / 2.6;
+      group.add(outer, core, r1, shell(90, 3.7, 0.3, 0.05));
+      spin.push([outer, 0, 0.0010, 0], [core, 0.0009, -0.0016, 0], [r1, 0, 0, 0.0010]);
+
+    } else if (variant === "knot") {
+      // HANA — one continuous interwoven path: many systems, one architecture
+      const knot = new THREE.Mesh(
+        new THREE.TorusKnotGeometry(2.25, 0.045, 260, 14, 2, 3),
+        solidMat(glow, 0.6)
+      );
+      const cage = edges(new THREE.IcosahedronGeometry(3.5, 0), ink, 0.16);
+      group.add(knot, cage, shell(100, 3.5, 0.3, 0.045));
+      spin.push([knot, 0.0007, 0.0012, 0], [cage, 0, -0.0008, 0]);
+
+    } else if (variant === "lattice") {
+      // Systems — orthogonal structure, nested frames on a common axis
+      const o = edges(new THREE.BoxGeometry(4.1, 4.1, 4.1), glow, 0.68);
+      const m = edges(new THREE.BoxGeometry(2.9, 2.9, 2.9), ink, 0.42);
+      m.rotation.set(Math.PI / 4, Math.PI / 4, 0);
+      const i = edges(new THREE.BoxGeometry(1.6, 1.6, 1.6), glow, 0.6);
+      group.add(o, m, i, shell(90, 3.6, 0.35, 0.045));
+      spin.push([o, 0, 0.0008, 0], [m, 0.0011, -0.0013, 0], [i, 0, 0.0022, 0.0008]);
+
+    } else if (variant === "meridian") {
+      // Research & Insights — a measured grid: latitude / longitude, not facets
+      const globe = edges(new THREE.SphereGeometry(3.25, 22, 13), glow, 0.34);
+      const core = edges(new THREE.IcosahedronGeometry(1.5, 0), ink, 0.28);
+      const r1 = ring(4.2, 0.008, glow, 0.4);
+      r1.rotation.x = Math.PI / 2;
+      group.add(globe, core, r1, shell(110, 3.25, 0.25, 0.05));
+      spin.push([globe, 0, 0.0011, 0], [core, 0.0008, -0.0018, 0], [r1, 0, 0, 0.0009]);
+
+    } else if (variant === "portal") {
+      // Contact — an open aperture rather than a closed solid
+      const r1 = ring(3.5, 0.016, glow, 0.72);
+      const r2 = ring(2.95, 0.011, ink, 0.42);
+      r2.rotation.x = Math.PI / 3;
+      const r3 = ring(2.4, 0.009, glow, 0.55);
+      r3.rotation.y = Math.PI / 3;
+      const core = edges(new THREE.IcosahedronGeometry(0.95, 0), glow, 0.65);
+      group.add(r1, r2, r3, core, shell(80, 3.5, 0.4, 0.045));
+      spin.push([r1, 0, 0, 0.0009], [r2, 0.0012, 0, 0], [r3, 0, 0.0014, 0], [core, 0.002, 0.002, 0]);
+
+    } else {
+      // Home — the flagship geodesic orb with gyroscope rings
+      const outer = edges(new THREE.IcosahedronGeometry(3.3, 1), glow, 0.55);
+      const core = edges(new THREE.IcosahedronGeometry(1.85, 0), ink, 0.3);
+      const r1 = ring(4.05, 0.009, glow, 0.45);
+      r1.rotation.x = Math.PI / 2.3;
+      const r2 = ring(4.45, 0.007, ink, 0.2);
+      r2.rotation.set(Math.PI / 2.8, Math.PI / 3, 0);
+      const pts = shell(120, 3.3, 0.22, 0.05);
+      group.add(outer, core, r1, r2, pts);
+      spin.push([outer, 0, 0.0009, 0], [core, 0.0007, -0.0016, 0],
+                [r1, 0, 0, 0.0011], [r2, 0, 0, -0.0008], [pts, 0, 0.0004, 0]);
+    }
+
+    function resize() {
+      const r = cvs.getBoundingClientRect();
+      const w = r.width, h = r.height;
+      if (!w || !h) return;
+      renderer.setSize(w, h, false);
+      const aspect = w / h;
+      camera.aspect = aspect;
+      camera.updateProjectionMatrix();
+
+      // push the object into the right-hand zone on wide screens so the copy
+      // on the left sits against clean space; centre + shrink it when narrow
+      const halfH = Math.tan((camera.fov * Math.PI / 180) / 2) * camera.position.z;
+      if (aspect >= 1.15) {
+        group.position.x = halfH * aspect * 0.27;
+        group.scale.setScalar(1);
+      } else {
+        group.position.x = 0;
+        group.scale.setScalar(0.72);
+      }
+    }
+
+    const mouse = { x: 0, y: 0 };
+    const target = { x: 0, y: 0 };
+    if (!COARSE) {
+      window.addEventListener("mousemove", (e) => {
+        mouse.x = (e.clientX / innerWidth) * 2 - 1;
+        mouse.y = (e.clientY / innerHeight) * 2 - 1;
+      }, { passive: true });
+    }
+
+    let running = true, raf = 0;
+    function frame(t) {
+      raf = 0;
+      target.x += (mouse.y * 0.26 - target.x) * 0.04;
+      target.y += (mouse.x * 0.34 - target.y) * 0.04;
+      group.rotation.x = target.x;
+      group.rotation.y = t * 0.00009 + target.y;
+      for (let i = 0; i < spin.length; i++) {
+        const s = spin[i];
+        s[0].rotation.x += s[1];
+        s[0].rotation.y += s[2];
+        s[0].rotation.z += s[3];
+      }
+      renderer.render(scene, camera);
+      if (running) raf = requestAnimationFrame(frame);
+    }
+
+    let rt = 0;
+    window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(resize, 180); });
+
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver((es) => es.forEach((en) => {
+        running = en.isIntersecting;
+        if (running && !raf) raf = requestAnimationFrame(frame);
+      }), { threshold: 0 }).observe(cvs);
+    }
+
+    resize();
+    raf = requestAnimationFrame(frame);
+  }
+
+  /* ======================================================================
+     8c. Constellations — content mapped onto the vertices of a rotating form.
+         The markup list is the source of truth and the fallback; this lifts
+         each item onto its vertex and shows its detail in a readout box.
+     ====================================================================== */
+  const CSTL_SHAPES = {
+    tetra: {
+      tilt: [0.34, 0.12],
+      verts: [[1, 1, 1], [-1, -1, 1], [-1, 1, -1], [1, -1, -1]],
+      edges: [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
+    },
+    octa: {
+      tilt: [0.52, 0.34],
+      verts: [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]],
+      edges: [[0, 2], [0, 3], [0, 4], [0, 5], [1, 2], [1, 3], [1, 4], [1, 5],
+              [2, 4], [2, 5], [3, 4], [3, 5]]
+    },
+    ring: {
+      tilt: [0.62, 0.18],
+      verts: [[1, 0, 0], [0, 1, 0.35], [-1, 0, 0], [0, -1, -0.35]],
+      edges: [[0, 1], [1, 2], [2, 3], [3, 0]]
+    },
+    // smooth continuous curves — points ride the path instead of sitting on
+    // corners. curve: [p, q] of a torus knot, matching the HANA hero language.
+    knot: { curve: [2, 3], radius: 1.85, tilt: [0.42, 0.16] },
+    knotAlt: { curve: [3, 2], radius: 1.85, tilt: [0.56, 0.3] },
+    cube: {
+      tilt: [0.38, 0.2],
+      verts: [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1],
+              [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]],
+      edges: [[0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3],
+              [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]]
+    }
+  };
+
+  function constellations() {
+    const boxes = $$("[data-cstl]");
+    if (!boxes.length || REDUCED || typeof THREE === "undefined") return;
+
+    boxes.forEach((box) => {
+      const canvas = $(".cstl__gl", box);
+      const items = $$(".cstl__nodes > li", box);
+      const panel = $("[data-panel]", box);
+      const spec = CSTL_SHAPES[box.dataset.shape] || CSTL_SHAPES.tetra;
+      if (!canvas || !items.length) return;
+      if (!spec.curve && items.length > spec.verts.length) return;
+
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+      } catch (e) { return; }
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+      camera.position.set(0, 0, 6.2);
+      const glow = new THREE.Color(0x57d9ff);
+      const group = new THREE.Group();
+      scene.add(group);
+
+      const R = 2.55;
+      const tilt = spec.tilt || [0.35, 0.15];
+      const linePts = [];
+      let pos;
+
+      if (spec.curve) {
+        // point on a (p,q) torus knot at t in [0,1)
+        const P = spec.curve[0], Q = spec.curve[1], KR = spec.radius || 1.85;
+        const at = (t) => {
+          const u = t * Math.PI * 2 * P;
+          const qp = (Q / P) * u;
+          const cs = Math.cos(qp);
+          return new THREE.Vector3(
+            KR * (2 + cs) * 0.5 * Math.cos(u),
+            KR * (2 + cs) * 0.5 * Math.sin(u),
+            KR * Math.sin(qp) * 0.5
+          );
+        };
+        // information points spaced evenly along the path
+        pos = [];
+        for (let i = 0; i < items.length; i++) pos.push(at(i / items.length));
+        // the path itself, drawn smoothly
+        const SEG = 420;
+        for (let i = 0; i < SEG; i++) linePts.push(at(i / SEG), at((i + 1) / SEG));
+      } else {
+        pos = spec.verts.map((v) => new THREE.Vector3(v[0], v[1], v[2]).normalize().multiplyScalar(R));
+        spec.edges.forEach((e) => { linePts.push(pos[e[0]].clone(), pos[e[1]].clone()); });
+      }
+      const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
+      group.add(new THREE.LineSegments(
+        lineGeo,
+        new THREE.LineBasicMaterial({ color: glow, transparent: true, opacity: spec.curve ? 0.42 : 0.3 })
+      ));
+
+      // a marker at every vertex that carries information
+      const dots = pos.slice(0, items.length).map((p) => {
+        const d = new THREE.Mesh(
+          new THREE.SphereGeometry(0.075, 16, 16),
+          new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.85 })
+        );
+        d.position.copy(p);
+        group.add(d);
+        return d;
+      });
+
+      // generous invisible spheres so the vertex itself is easy to hover —
+      // the visible dot is far too small to be a comfortable target
+      const hits = pos.slice(0, items.length).map((p, i) => {
+        const hit = new THREE.Mesh(
+          new THREE.SphereGeometry(0.42, 12, 12),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+        );
+        hit.position.copy(p);
+        hit.userData.i = i;
+        group.add(hit);
+        return hit;
+      });
+      const ray = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      let inside = false, overLabel = -1, overVertex = -1;
+
+      box.classList.add("is-3d");
+
+      /* ---- interaction ---- */
+      let active = -1;
+      function setActive(i) {
+        if (active === i) return;
+        active = i;
+        items.forEach((li, n) => li.classList.toggle("is-on", n === i));
+        dots.forEach((d, n) => d.scale.setScalar(n === i ? 1.9 : 1));
+        if (!panel) return;
+        if (i < 0) { panel.classList.remove("is-on"); return; }
+        const li = items[i];
+        const t = $(".cstl__node-t", li);
+        const b = $(".cstl__node-b", li);
+        panel.textContent = "";
+        if (li.dataset.k) {
+          const k = document.createElement("span");
+          k.className = "k"; k.textContent = li.dataset.k; panel.appendChild(k);
+        }
+        const h = document.createElement("h4");
+        h.textContent = t ? t.textContent : "";
+        panel.appendChild(h);
+        if (b) {
+          const p = document.createElement("p");
+          p.textContent = b.textContent;
+          panel.appendChild(p);
+        }
+        panel.classList.add("is-on");
+      }
+
+      // label and vertex are two ways into the same state; the label wins
+      // when both are true so the readout never flickers between them
+      function refresh() { setActive(overLabel >= 0 ? overLabel : overVertex); }
+
+      items.forEach((li, i) => {
+        const btn = $(".cstl__node", li) || li;
+        btn.addEventListener("mouseenter", () => { overLabel = i; refresh(); });
+        btn.addEventListener("mouseleave", () => { if (overLabel === i) { overLabel = -1; refresh(); } });
+        btn.addEventListener("focus", () => { overLabel = i; refresh(); });
+        btn.addEventListener("blur", () => { if (overLabel === i) { overLabel = -1; refresh(); } });
+        btn.addEventListener("click", (e) => {
+          if (btn.tagName !== "A") { e.preventDefault(); overLabel = i; refresh(); }
+        });
+      });
+
+      // clicking a vertex follows its link, where it has one
+      box.addEventListener("click", () => {
+        if (overVertex < 0 || overLabel >= 0) return;
+        const a = $(".cstl__node", items[overVertex]);
+        if (a && a.tagName === "A") a.click();
+      });
+      // the form settles while the pointer is inside, so labels stop moving
+      // under the cursor and stay clickable
+      let spin = 0.0022, spinTo = 0.0022;
+      box.addEventListener("mouseenter", () => { spinTo = 0; });
+      box.addEventListener("mouseleave", () => {
+        spinTo = 0.0022; inside = false; overLabel = -1; overVertex = -1;
+        box.style.cursor = ""; setActive(-1);
+      });
+      box.addEventListener("focusin", () => { spinTo = 0; });
+      box.addEventListener("focusout", () => { spinTo = 0.0022; });
+
+      /* ---- pointer parallax ---- */
+      const mouse = { x: 0, y: 0 }, target = { x: 0, y: 0 };
+      if (!COARSE) {
+        box.addEventListener("mousemove", (e) => {
+          const r = box.getBoundingClientRect();
+          mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+          mouse.y = ((e.clientY - r.top) / r.height) * 2 - 1;
+          ndc.x = mouse.x;
+          ndc.y = -mouse.y;
+          inside = true;
+        }, { passive: true });
+      }
+
+      let w = 0, h = 0;
+      function resize() {
+        const r = canvas.getBoundingClientRect();
+        w = r.width; h = r.height;
+        if (!w || !h) return;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.position.z = w / h < 1 ? 8.2 : 6.2;
+        camera.updateProjectionMatrix();
+      }
+
+      // project each vertex to screen space and park its label there
+      const v = new THREE.Vector3();
+      const sides = items.map(function () { return 1; });
+      function place() {
+        for (let i = 0; i < items.length; i++) {
+          v.copy(pos[i]).applyMatrix4(group.matrixWorld).project(camera);
+          const x = (v.x * 0.5 + 0.5) * w;
+          const y = (-v.y * 0.5 + 0.5) * h;
+          const depth = Math.min(Math.max((v.z + 1) / 2, 0), 1);   // 0 near → 1 far
+          const li = items[i];
+          // fan the label away from the centre so it never covers its own
+          // vertex; hysteresis stops it flip-flopping as the form rotates
+          const rel = x / w - 0.5;
+          if (rel > 0.06) sides[i] = 1; else if (rel < -0.06) sides[i] = -1;
+          const off = x + sides[i] * 18;
+          li.style.transform =
+            (sides[i] < 0 ? "translate(-100%,-50%) " : "translate(0,-50%) ") +
+            "translate(" + off.toFixed(1) + "px," + y.toFixed(1) + "px)";
+          // the accent tick always faces the vertex it belongs to
+          li.classList.toggle("is-left", sides[i] < 0);
+          li.style.opacity = (1 - depth * 0.62).toFixed(2);
+          li.style.zIndex = String(100 - Math.round(depth * 100));
+          if (i === active && panel) {
+            const pw = panel.offsetWidth, ph = panel.offsetHeight;
+            let px = x + 26, py = y - ph / 2;
+            if (px + pw > w - 8) px = x - 26 - pw;
+            px = Math.max(8, Math.min(px, w - pw - 8));
+            py = Math.max(8, Math.min(py, h - ph - 8));
+            panel.style.transform = "translate(" + px.toFixed(1) + "px," + py.toFixed(1) + "px)";
+          }
+        }
+      }
+
+      let running = true, raf = 0;
+      function frame() {
+        raf = 0;
+        // once a point is engaged the tilt locks, so the label can't drift
+        // out from under the cursor while you're reading it
+        if (active < 0) {
+          target.x += (mouse.y * 0.3 - target.x) * 0.05;
+          target.y += (mouse.x * 0.4 - target.y) * 0.05;
+        }
+        group.rotation.x = tilt[0] + target.x;
+        group.rotation.z = tilt[1];
+        spin += (spinTo - spin) * 0.07;
+        group.rotation.y += spin;
+        group.updateMatrixWorld();
+        if (inside) {
+          ray.setFromCamera(ndc, camera);
+          const hit = ray.intersectObjects(hits, false)[0];
+          const idx = hit ? hit.object.userData.i : -1;
+          if (idx !== overVertex) {
+            overVertex = idx;
+            box.style.cursor = idx >= 0 ? "pointer" : "";
+            refresh();
+          }
+        }
+        place();
+        renderer.render(scene, camera);
+        if (running) raf = requestAnimationFrame(frame);
+      }
+
+      let rt = 0;
+      window.addEventListener("resize", () => {
+        clearTimeout(rt);
+        rt = setTimeout(() => { resize(); }, 180);
+      });
+
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver((es) => es.forEach((en) => {
+          running = en.isIntersecting;
+          if (running && !raf) raf = requestAnimationFrame(frame);
+        }), { threshold: 0 }).observe(box);
+      }
+
+      resize();
+      raf = requestAnimationFrame(frame);
+    });
   }
 
   /* ======================================================================
@@ -453,6 +926,44 @@
   }
 
   /* ======================================================================
+     12b. Insights index — filter entries by stream
+     ====================================================================== */
+  function insightFilters() {
+    const bar = $(".filters");
+    if (!bar) return;
+    const btns = $$(".filter", bar);
+    const posts = $$("[data-cat]");
+    const empty = $("[data-empty]");
+    if (!btns.length || !posts.length) return;
+
+    bar.addEventListener("click", (e) => {
+      const btn = e.target.closest(".filter");
+      if (!btn) return;
+      const f = btn.dataset.filter || "all";
+      btns.forEach((b) => b.classList.toggle("is-on", b === btn));
+
+      let shown = 0;
+      posts.forEach((p) => {
+        const hit = f === "all" || p.dataset.cat === f;
+        p.classList.toggle("is-hidden", !hit);
+        if (hit) shown++;
+      });
+      if (empty) empty.hidden = shown > 0;
+    });
+
+    // pointer glow on entry cards, same as .card
+    if (!COARSE) {
+      posts.forEach((p) => {
+        p.addEventListener("mousemove", (e) => {
+          const r = p.getBoundingClientRect();
+          p.style.setProperty("--mx", ((e.clientX - r.left) / r.width) * 100 + "%");
+          p.style.setProperty("--my", ((e.clientY - r.top) / r.height) * 100 + "%");
+        });
+      });
+    }
+  }
+
+  /* ======================================================================
      13. Year stamp
      ====================================================================== */
   function year() {
@@ -462,8 +973,9 @@
   /* ---------------------------------------------------------------- init */
   function init() {
     nav(); progress(); reveals(); heroLines(); parallax();
-    cardGlow(); counters(); network(); field(); videos(); marquee();
-    forms(); year();
+    cardGlow(); counters(); network(); heroGeometry(); constellations();
+    field(); videos(); marquee();
+    forms(); insightFilters(); year();
     document.documentElement.classList.add("js-ready");
   }
 
