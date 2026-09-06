@@ -1489,20 +1489,20 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 .foot__bar a:hover { color: var(--ink-2); }
 
 /* giant wordmark at the very bottom */
+/* scales to the container width, so the whole word always fits — the old
+   fixed vw sizing overflowed and .foot's overflow:hidden ate the "AI" */
 .foot__word {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 40px;
+  user-select: none;
+}
+.foot__word text {
   font-family: var(--f-display);
   font-weight: 700;
-  font-size: clamp(3rem, 15.5vw, 15rem);
-  line-height: .8;
-  letter-spacing: -0.055em;
-  text-align: center;
-  margin-top: 40px;
-  background: linear-gradient(180deg, rgba(237,232,225,.10), rgba(255,255,255,.055) 62%, transparent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  user-select: none;
-  white-space: nowrap;
+  font-size: 140px;
+  fill: url(#footWordFade);
 }
 
 /* ==========================================================================
