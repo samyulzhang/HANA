@@ -533,6 +533,7 @@
       const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
       camera.position.set(0, 0, 6.2);
       const glow = new THREE.Color(0x57d9ff);
+      const ink = new THREE.Color(0xede8e1);
       const group = new THREE.Group();
       scene.add(group);
 
@@ -593,6 +594,47 @@
         group.add(hit);
         return hit;
       });
+      /* --- ornament -------------------------------------------------------
+         Layers that echo the hero forms. Deliberately kept INSIDE the ring of
+         information points and at low opacity: the perimeter is where the
+         labels and their dots live, and nothing here may compete with them. */
+      const decor = [];
+      const ornament = (obj, dx, dy, dz) => { group.add(obj); decor.push([obj, dx, dy, dz]); };
+
+      // counter-rotating core
+      ornament(new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(0.6, 0)),
+        new THREE.LineBasicMaterial({ color: ink, transparent: true, opacity: 0.28 })
+      ), 0.0009, -0.0017, 0);
+
+      // inner gyroscope rings
+      const gyro = (rad, thick, color, op, rx, ry) => {
+        const m = new THREE.Mesh(
+          new THREE.TorusGeometry(rad, thick, 8, 96),
+          new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: op })
+        );
+        m.rotation.set(rx, ry, 0);
+        return m;
+      };
+      ornament(gyro(1.2, 0.006, glow, 0.32, Math.PI / 2.2, 0), 0, 0, 0.0013);
+      ornament(gyro(1.55, 0.004, ink, 0.2, Math.PI / 2.9, Math.PI / 3), 0, 0, -0.0009);
+
+      // faint interior haze, well inside the information points
+      const hazeN = 70, hazePos = new Float32Array(hazeN * 3);
+      for (let i = 0; i < hazeN; i++) {
+        const hr = 1.9 + (Math.random() - 0.5) * 0.55;
+        const th = Math.random() * Math.PI * 2;
+        const ph = Math.acos(2 * Math.random() - 1);
+        hazePos[i * 3] = hr * Math.sin(ph) * Math.cos(th);
+        hazePos[i * 3 + 1] = hr * Math.sin(ph) * Math.sin(th);
+        hazePos[i * 3 + 2] = hr * Math.cos(ph);
+      }
+      const hazeGeo = new THREE.BufferGeometry();
+      hazeGeo.setAttribute("position", new THREE.BufferAttribute(hazePos, 3));
+      ornament(new THREE.Points(hazeGeo, new THREE.PointsMaterial({
+        color: glow, size: 0.03, transparent: true, opacity: 0.45, sizeAttenuation: true
+      })), 0, 0.0006, 0);
+
       const ray = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
       let inside = false, overLabel = -1, overVertex = -1;
@@ -729,6 +771,12 @@
         group.rotation.z = tilt[1];
         spin += (spinTo - spin) * 0.07;
         group.rotation.y += spin;
+        for (let i = 0; i < decor.length; i++) {
+          const d = decor[i];
+          d[0].rotation.x += d[1];
+          d[0].rotation.y += d[2];
+          d[0].rotation.z += d[3];
+        }
         group.updateMatrixWorld();
         if (inside) {
           ray.setFromCamera(ndc, camera);
