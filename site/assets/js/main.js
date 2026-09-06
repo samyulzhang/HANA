@@ -423,6 +423,8 @@
     const spin = [];                       // [object, dx, dy, dz] each frame
     const variant = cvs.dataset.gl || "orb";
 
+
+
     if (variant === "shard") {
       // Company — angular crystal, few clean planes
       const outer = edges(new THREE.OctahedronGeometry(3.7, 0), glow, 0.72);
@@ -485,6 +487,102 @@
                 [r1, 0, 0, 0.0011], [r2, 0, 0, -0.0008], [pts, 0, 0.0004, 0]);
     }
 
+    // Measure what was actually built rather than guessing a scale.
+    // A bounding sphere is far too conservative here — it assumes a ring
+    // presents face-on, which the fixed tilts never allow — so instead sample
+    // the geometry and take the worst vertical extent over a full rotation.
+    // Exact, and self-correcting for any shape added later.
+    const form = (function () {
+      group.updateMatrixWorld(true);
+
+      // Sample the form into a point cloud that covers every pose it will ever
+      // strike: each child that animates is sampled around its own spin axes,
+      // so a ring that swings edge-on to face-on is measured at its widest,
+      // not at whatever pose it happened to hold on frame one. Without this the
+      // fit is computed from a silhouette the shape immediately grows out of.
+      const spinOf = new Map();
+      for (let i = 0; i < spin.length; i++) spinOf.set(spin[i][0], spin[i]);
+
+      const cloud = [];
+      const v = new THREE.Vector3();
+      const m = new THREE.Matrix4();
+      const e = new THREE.Euler();
+      const q = new THREE.Quaternion();
+      const STEPS = 6, TURN = (Math.PI * 2) / STEPS;
+      const range = (on) => {
+        if (!on) return [0];
+        const out = [];
+        for (let i = 0; i < STEPS; i++) out.push(i * TURN);
+        return out;
+      };
+
+      group.children.forEach((o) => {
+        const s = spinOf.get(o);
+        const rx = range(s && s[1]), ry = range(s && s[2]), rz = range(s && s[3]);
+        o.traverse((c) => {
+          const g = c.geometry;
+          if (!g || !g.attributes || !g.attributes.position) return;
+          const a = g.attributes.position;
+          const stride = Math.max(1, Math.floor(a.count / 140));
+          for (let i = 0; i < rx.length; i++)
+            for (let j = 0; j < ry.length; j++)
+              for (let k = 0; k < rz.length; k++) {
+                e.set(o.rotation.x + rx[i], o.rotation.y + ry[j],
+                      o.rotation.z + rz[k], o.rotation.order);
+                q.setFromEuler(e);
+                m.compose(o.position, q, o.scale);
+                if (c !== o) m.multiply(c.matrix);
+                for (let n = 0; n < a.count; n += stride) {
+                  cloud.push(v.fromBufferAttribute(a, n).applyMatrix4(m).clone());
+                }
+              }
+        });
+      });
+      if (!cloud.length) return new Float32Array(0);
+
+      // Thin the cloud to its silhouette envelope: keep only the furthest point
+      // in each direction bucket. A few hundred points then bound the whole form
+      // for any rotation, which is what makes the exact fit below cheap enough
+      // to re-run on every resize.
+      const BT = 32, BP = 16, NB = BT * BP;
+      const hull = new Float32Array(NB * 3), hullR = new Float32Array(NB);
+      for (let i = 0; i < cloud.length; i++) {
+        const p = cloud[i];
+        const rr = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        if (rr < 1e-6) continue;
+        let bt = Math.floor(((Math.atan2(p.z, p.x) + Math.PI) / (Math.PI * 2)) * BT);
+        let bp = Math.floor((Math.acos(Math.max(-1, Math.min(1, p.y / rr))) / Math.PI) * BP);
+        if (bt >= BT) bt = BT - 1;
+        if (bp >= BP) bp = BP - 1;
+        const b = bt * BP + bp;
+        if (rr > hullR[b]) {
+          hullR[b] = rr;
+          hull[b * 3] = p.x; hull[b * 3 + 1] = p.y; hull[b * 3 + 2] = p.z;
+        }
+      }
+
+      // the group itself sweeps rotation.y continuously and tilts on x with the
+      // pointer, so bake that whole range into the envelope as well — the result
+      // is every position any part of the form can ever occupy
+      const probe = new THREE.Object3D();
+      const out = [];
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
+        for (let x = -0.3; x <= 0.301; x += 0.15) {
+          probe.rotation.set(x, a, 0);
+          probe.updateMatrix();
+          const e0 = probe.matrix.elements;
+          for (let b = 0; b < NB; b++) {
+            if (!hullR[b]) continue;
+            const px = hull[b * 3], py = hull[b * 3 + 1], pz = hull[b * 3 + 2];
+            out.push(e0[0] * px + e0[4] * py + e0[8] * pz,
+                     e0[1] * px + e0[5] * py + e0[9] * pz,
+                     e0[2] * px + e0[6] * py + e0[10] * pz);
+          }
+        }
+      }
+      return new Float32Array(out);
+    })();
+
     function resize() {
       const r = cvs.getBoundingClientRect();
       const w = r.width, h = r.height;
@@ -494,16 +592,62 @@
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
 
-      // push the object into the right-hand zone on wide screens so the copy
-      // on the left sits against clean space; centre + shrink it when narrow
-      const halfH = Math.tan((camera.fov * Math.PI / 180) / 2) * camera.position.z;
-      if (aspect >= 1.15) {
-        group.position.x = halfH * aspect * 0.27;
-        group.scale.setScalar(1);
-      } else {
-        group.position.x = 0;
-        group.scale.setScalar(0.72);
+      // Centre the form in the frame the viewer can actually SEE, then grow it
+      // until the first of the four borders stops it. The visible frame is the
+      // canvas minus whatever the fixed nav covers of its top — a form centred
+      // in the raw canvas reads as sitting high, because its crown is behind
+      // the nav. Everything below is derived, so it stays true at any size.
+      if (!form.length) return;
+      const tanHalf = Math.tan((camera.fov * Math.PI / 180) / 2);
+      const camZ = camera.position.z;
+      const k = (h / 2) / tanHalf;      // world→px, before the perspective divide
+
+      // how much of the canvas top the nav hides
+      const navEl = document.querySelector(".nav");
+      const navBottom = navEl ? navEl.getBoundingClientRect().bottom : 74;
+      const occTop = Math.min(Math.max(navBottom - r.top, 0), h * 0.5);
+
+      // sit the centre of the form on the centre of the visible band; on wide
+      // screens push it right (world units, independent of scale) so the copy
+      // column on the left sits against clean space rather than the shape
+      const MARGIN = 0.965;
+      const halfH = tanHalf * camZ;
+      const oy = -(occTop / 2) * camZ / k;
+      const ox = aspect >= 1.15 ? halfH * aspect * 0.30 : 0;
+      group.position.x = ox;
+      group.position.y = oy;
+
+      // the borders the form has to stay inside, in px from the canvas centre
+      const lim = {
+        up:    (h / 2 - occTop) * MARGIN,
+        down:  (h / 2) * MARGIN,
+        side:  (w / 2) * MARGIN
+      };
+
+      // Solve for the largest scale that keeps every sampled point inside those
+      // borders. Perspective makes this non-linear — the near face of the form
+      // magnifies as it grows — so a ratio can't answer it; a bisection can, and
+      // it converges in a handful of steps on a few thousand points. The offset
+      // is baked into sx/sy so a rightward push automatically shrinks the form
+      // if that's what it takes to keep its right edge on-frame.
+      const fits = (s) => {
+        for (let i = 0; i < form.length; i += 3) {
+          const d = camZ - s * form[i + 2];
+          if (d < 0.25) return false;
+          const sy = -k * (s * form[i + 1] + oy) / d;   // +down, from centre
+          const sx =  k * (s * form[i] + ox) / d;
+          if (sy < -lim.up || sy > lim.down) return false;
+          if (sx < -lim.side || sx > lim.side) return false;
+        }
+        return true;
+      };
+      let lo = 0, hi = 4;
+      if (fits(hi)) { group.scale.setScalar(hi); return; }
+      for (let i = 0; i < 22; i++) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) lo = mid; else hi = mid;
       }
+      group.scale.setScalar(lo || 0.5);
     }
 
     const mouse = { x: 0, y: 0 };
