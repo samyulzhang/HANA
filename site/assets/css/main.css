@@ -662,6 +662,16 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   font-size: clamp(2.9rem, 6.6vw, 5.6rem);
   letter-spacing: -0.042em;
 }
+/* acronym lockup — the name at full scale, its expansion set quietly beneath
+   it, rather than run on as one line that has to break mid-phrase */
+.hl-expand {
+  font-size: clamp(1.05rem, 2vw, 1.85rem);
+  font-weight: 400;
+  letter-spacing: -0.008em;
+  color: var(--ink-2);
+}
+.rv-line--sub { margin-top: clamp(12px, 1.3vw, 22px); }
+
 /* dimmed first line — the light/bold headline pairing from the references */
 .hl-soft { color: var(--ink-2); font-weight: 300; opacity: .85; }
 .hero__copy .lede {

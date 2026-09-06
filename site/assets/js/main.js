@@ -106,6 +106,76 @@
   }
 
   /* ======================================================================
+     4b. Decode — hero headlines resolve out of noise once, on arrival.
+         Applied only to [data-scramble] (one headline per page) so it stays
+         a punctuation mark, not a tic.
+     ====================================================================== */
+  function decode() {
+    const els = $$("[data-scramble]");
+    if (!els.length) return;
+
+    // the real wording stays the accessible name whatever the glyphs do
+    els.forEach((el) => {
+      if (!el.getAttribute("aria-label")) {
+        el.setAttribute("aria-label", el.textContent.replace(/\s+/g, " ").trim());
+      }
+    });
+    if (REDUCED) return;
+
+    const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&/<>=+*";
+    const pick = () => GLYPHS.charAt((Math.random() * GLYPHS.length) | 0);
+
+    els.forEach((el) => {
+      // scramble each line separately so the line structure survives
+      const lines = $$(".rv-line > span", el);
+      (lines.length ? lines : [el]).forEach((node, li) => {
+        const text = node.textContent;
+        const chars = text.split("");
+        // spaces and punctuation hold still — only letters and digits decode
+        const idx = [];
+        for (let i = 0; i < chars.length; i++) {
+          if (/[A-Za-z0-9]/.test(chars[i])) idx.push(i);
+        }
+        if (!idx.length) return;
+
+        const step = Math.min(55, 700 / idx.length);
+        const base = 340 + li * 120;
+        const settle = idx.map((_, n) => base + n * step);
+        // Each character holds a glyph for a beat rather than changing every
+        // frame. Same overall timing — you can just read the decode happening
+        // instead of seeing a blur. Also makes it frame-rate independent.
+        const HOLD = 78;
+        const swapAt = idx.map(() => 0);
+        const shown = idx.map(() => pick());
+
+        // clock starts on the first animation frame, not here: WebGL setup can
+        // block the main thread long enough to skip the whole window otherwise
+        let t0 = 0, last = "";
+
+        function tick(now) {
+          if (!t0) t0 = now;
+          const t = now - t0;
+          let done = true;
+          const out = chars.slice();
+          for (let n = 0; n < idx.length; n++) {
+            if (t >= settle[n]) continue;
+            done = false;
+            if (t >= swapAt[n]) {
+              shown[n] = pick();
+              swapAt[n] = t + HOLD * (0.75 + Math.random() * 0.5);
+            }
+            out[idx[n]] = shown[n];
+          }
+          const str = done ? text : out.join("");
+          if (str !== last) { node.textContent = str; last = str; }
+          if (!done) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      });
+    });
+  }
+
+  /* ======================================================================
      5. Parallax
      ====================================================================== */
   function parallax() {
@@ -515,7 +585,7 @@
     const boxes = $$("[data-cstl]");
     if (!boxes.length || REDUCED || typeof THREE === "undefined") return;
 
-    boxes.forEach((box) => {
+    const build = (box) => {
       const canvas = $(".cstl__gl", box);
       const items = $$(".cstl__nodes > li", box);
       const panel = $("[data-panel]", box);
@@ -808,7 +878,20 @@
 
       resize();
       raf = requestAnimationFrame(frame);
-    });
+    };
+
+    // Build each form only as it nears the viewport. Creating every WebGL
+    // context at load blocked the main thread long enough to swallow the
+    // hero's decode animation, and most of these are far below the fold.
+    if (!("IntersectionObserver" in window)) { boxes.forEach(build); return; }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        io.unobserve(en.target);
+        build(en.target);
+      });
+    }, { rootMargin: "400px 0px" });
+    boxes.forEach((box) => io.observe(box));
   }
 
   /* ======================================================================
@@ -817,6 +900,22 @@
   function field() {
     const cvs = $("[data-field]");
     if (!cvs || REDUCED) return;
+
+    // Compile only as the CTA approaches. This lives at the very bottom of
+    // every page, and compiling its shader at load stalled the main thread
+    // through the whole hero animation.
+    if ("IntersectionObserver" in window) {
+      const gate = new IntersectionObserver((es) => {
+        if (!es.some((en) => en.isIntersecting)) return;
+        gate.disconnect();
+        build();
+      }, { rootMargin: "500px 0px" });
+      gate.observe(cvs);
+    } else {
+      build();
+    }
+
+    function build() {
     const gl = cvs.getContext("webgl", { alpha: true, antialias: false, premultipliedAlpha: false });
     if (!gl) return;
 
@@ -924,6 +1023,7 @@
     }
     resize();
     raf = requestAnimationFrame(frame);
+    }
   }
 
   /* ======================================================================
@@ -1020,7 +1120,7 @@
 
   /* ---------------------------------------------------------------- init */
   function init() {
-    nav(); progress(); reveals(); heroLines(); parallax();
+    nav(); progress(); reveals(); heroLines(); decode(); parallax();
     cardGlow(); counters(); network(); heroGeometry(); constellations();
     field(); videos(); marquee();
     forms(); insightFilters(); year();
