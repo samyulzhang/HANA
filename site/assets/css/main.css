@@ -29,19 +29,19 @@
 /* ---------- Tokens ---------- */
 :root {
   /* surfaces */
-  --bg:          #08070A;
-  --bg-1:        #0C0A0D;
-  --bg-2:        #12100F;
-  --bg-raise:    #17141A;
-  --line:        rgba(237, 232, 225, 0.10);
-  --line-soft:   rgba(237, 232, 225, 0.055);
-  --glass:       rgba(237, 232, 225, 0.028);
+  --bg:          #060607;
+  --bg-1:        #0A0A0C;
+  --bg-2:        #0E0E11;
+  --bg-raise:    #141417;
+  --line:        rgba(255, 255, 255, 0.085);
+  --line-soft:   rgba(255, 255, 255, 0.045);
+  --glass:       rgba(255, 255, 255, 0.025);
 
-  /* ink */
-  --ink:         #EDE8E1;
-  --ink-2:       #B7AFA5;
-  --ink-3:       #857E76;
-  --ink-4:       #55504B;
+  /* ink — a pure neutral ramp; the reference has no hue anywhere in it */
+  --ink:         #F4F5F6;
+  --ink-2:       #A9ACB2;
+  --ink-3:       #71757C;
+  --ink-4:       #45484E;
 
   /* accents pulled from the HANA renders */
   --amber:       #E6E6E6;
@@ -55,10 +55,11 @@
   --amber-glow:  0 0 0 1px rgba(255,255,255,.28), 0 8px 40px -8px rgba(255,255,255,.35);
 
   /* signature glow accent — used sparingly: live states, data, geometry */
-  --glow:        #57D9FF;
-  --glow-soft:   #B9F0FF;
-  --glow-deep:   #0B5C82;
-  --glow-rgb:    87, 217, 255;
+  /* the accent is light itself — one white source, used sparingly */
+  --glow:        #FFFFFF;
+  --glow-soft:   #E8EDF3;
+  --glow-deep:   #5A6068;
+  --glow-rgb:    236, 241, 247;
 
   /* type */
   --f-display: "Parkinsans", "Helvetica Neue", Arial, sans-serif;
@@ -67,8 +68,9 @@
   --f-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* rhythm */
-  --gutter: clamp(20px, 5vw, 64px);
-  --maxw: 1320px;
+  --gutter: clamp(22px, 6.8vw, 96px);
+  --maxw: 1400px;
+  --nav-h: 74px;      /* 16px pad + 58px bar — the line the hero hangs from */
   --sec-y: clamp(76px, 8.6vw, 136px);
 
   /* motion */
@@ -519,11 +521,14 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   overflow: hidden;
   isolation: isolate;
 }
-.hero--sub { min-height: 86svh; }
-/* the full-height home hero centres its copy; the shorter sub-page heroes
-   keep the bottom anchor, which suits their tighter frame */
-.hero:not(.hero--sub) { align-items: center; }
-
+/* every hero runs the same height, so the copy lands on the same line on every
+   page — a shorter sub-page hero leaves its copy floating with dead space under
+   it and reads as a different layout */
+.hero--sub { min-height: 100svh; }
+/* every hero anchors its copy to the bottom-left, so the form has the whole
+   upper frame to itself and the two read as one diagonal instead of two blocks
+   at the same eye level */
+.hero { padding-bottom: clamp(40px, 5.4vw, 74px); }
 /* index.html hero visual stack (no video) — grid, 3D geometry, scanline */
 /* soft light bloom behind the geometry — gives the object atmosphere and
    depth instead of flat wire-on-black */
@@ -551,8 +556,8 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   inset: 0;
   z-index: -8;
   background-image:
-    linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
   background-size: 56px 56px;
   -webkit-mask-image: radial-gradient(115% 85% at 50% 28%, #000 42%, transparent 88%);
   mask-image: radial-gradient(115% 85% at 50% 28%, #000 42%, transparent 88%);
@@ -605,23 +610,95 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   inset: 0;
   z-index: -2;
   background:
-    linear-gradient(180deg, rgba(8,7,10,.86) 0%, rgba(8,7,10,.32) 34%, rgba(8,7,10,.72) 72%, var(--bg) 100%),
-    radial-gradient(120% 80% at 50% 100%, rgba(8,7,10,.86), transparent 62%);
+    linear-gradient(180deg, rgba(6,6,7,.86) 0%, rgba(6,6,7,.32) 34%, rgba(6,6,7,.72) 72%, var(--bg) 100%),
+    radial-gradient(120% 80% at 50% 100%, rgba(6,6,7,.86), transparent 62%);
 }
 /* index.html hero — directional scrim: heavy on the left so the copy sits on
    calm darkness, clearing to the right so the geometry reads at full presence */
 .hero__scrim--thin {
   background:
     linear-gradient(90deg,
-      rgba(8,7,10,.94) 0%,
-      rgba(8,7,10,.88) 20%,
-      rgba(8,7,10,.66) 36%,
-      rgba(8,7,10,.38) 52%,
-      rgba(8,7,10,.16) 68%,
-      rgba(8,7,10,.05) 82%,
+      rgba(6,6,7,.94) 0%,
+      rgba(6,6,7,.88) 20%,
+      rgba(6,6,7,.66) 36%,
+      rgba(6,6,7,.38) 52%,
+      rgba(6,6,7,.16) 68%,
+      rgba(6,6,7,.05) 82%,
       transparent 92%),
-    linear-gradient(180deg, rgba(8,7,10,.72) 0%, transparent 24%, transparent 60%, var(--bg) 100%);
+    linear-gradient(180deg, rgba(6,6,7,.72) 0%, transparent 24%, transparent 60%, var(--bg) 100%);
 }
+/* ----------------------------------------------------------------------
+   The stage — copy on the left, the object on the right.
+
+   The two were sharing the same ground before, and a form lit this hard will
+   always win that fight: its rim is the brightest thing on the page. Giving
+   each a half removes the argument entirely, and the copy gets to sit on flat
+   black where small type belongs.
+   ---------------------------------------------------------------------- */
+.hero--stage { align-items: center; padding-top: calc(var(--nav-h) + 4px); }
+.hero--stage .hero__in { width: 100%; }
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 72px);
+}
+.stage__copy { max-width: 470px; }
+.stage__copy .eyebrow { margin-bottom: 20px; }
+.stage__copy .d1 {
+  font-size: clamp(2.1rem, 3.9vw, 3.3rem);
+  letter-spacing: -0.038em;
+  line-height: 1.04;
+  margin-bottom: 0;
+}
+.stage__copy .lede {
+  margin-top: clamp(14px, 2vh, 22px);
+  max-width: 40ch;
+  font-size: clamp(.88rem, 1vw, 1rem);
+  color: var(--ink-2);
+}
+.stage__copy .btn-row { margin-top: clamp(20px, 3vh, 32px); }
+
+/* the short index, under the copy in the same column */
+.stage__index {
+  list-style: none;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: clamp(14px, 2vw, 26px);
+  margin-top: clamp(26px, 4vh, 44px);
+  padding-top: clamp(16px, 2.2vh, 22px);
+  border-top: 1px solid var(--line-soft);
+}
+.stage__index a { display: grid; gap: 4px; color: inherit; }
+.stage__k {
+  font-family: var(--f-mono);
+  font-size: .64rem;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.stage__v { font-size: .82rem; color: var(--ink-2); line-height: 1.35; }
+.stage__index a:hover .stage__v { color: var(--ink); }
+
+/* the room: a low floor bloom under the object, and a bed under the copy */
+.hero--stage .hero__scrim {
+  background:
+    radial-gradient(46% 40% at 74% 72%, rgba(255,255,255,.05), transparent 70%),
+    linear-gradient(90deg, rgba(6,6,7,.72) 0%, rgba(6,6,7,.34) 34%, transparent 52%),
+    linear-gradient(180deg, rgba(6,6,7,.80) 0%, rgba(6,6,7,.22) 20%, transparent 42%),
+    linear-gradient(180deg, transparent 66%, rgba(6,6,7,.68) 88%, var(--bg) 100%);
+}
+
+@media (max-width: 860px) {
+  /* stack: copy first, the object gets the lower half of the frame */
+  .stage { grid-template-columns: minmax(0, 1fr); align-content: start; }
+  .stage__copy { max-width: none; }
+  .stage__index { grid-auto-flow: row; gap: 12px; }
+  .stage__index a { grid-template-columns: 4.4rem 1fr; align-items: baseline; gap: 12px; }
+}
+
 .hero__net {
   position: absolute;
   inset: 0;
@@ -657,24 +734,48 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 /* index.html hero — text confined to one narrow column so the visual
    carries most of the screen, matching the reference layouts */
 .hero__grid--solo { grid-template-columns: minmax(0, 1fr); }
-.hero__copy { max-width: 660px; }
+
+/* Hero type sits a step below the page's display scale on purpose. The form is
+   the subject of this frame; sizing the headline to match it makes the two
+   compete, and the shape stops reading as the thing you look at first. */
+/* A fixed measure for the hero copy. The layout centres the copy and the form
+   as a pair, and it sizes that pair from this column rather than from however
+   long a given page's headline happens to run — otherwise every page resolves
+   to slightly different margins.
+
+   The reserved height does the same job vertically. The block is anchored from
+   its bottom, so without it a page carrying less copy — no button row, a
+   one-line headline — starts further down, and the eyebrow that opens each page
+   lands on a different line every time you navigate. Reserving the tallest
+   block's height puts that first mark on one line across the site. */
+.hero__copy {
+  max-width: 430px;
+  min-height: clamp(252px, 21vw, 272px);
+}
+/* buttons are not prose — they size to their labels rather than to the text
+   measure, so a long pair doesn't stack and push the whole block taller than
+   its neighbours' */
+.hero__copy .btn-row {
+  width: max-content;
+  max-width: min(560px, calc(100vw - 2 * var(--gutter)));
+}
 .hero__copy .d1 {
-  font-size: clamp(2.3rem, 4.4vw, 3.9rem);
-  letter-spacing: -0.038em;
-  line-height: 1.02;
-  margin-bottom: 22px;
+  font-size: clamp(1.7rem, 2.9vw, 2.5rem);
+  letter-spacing: -0.034em;
+  line-height: 1.05;
+  margin-bottom: 15px;
 }
 /* single-word lead headline gets to run larger than a stacked one */
 .hero__copy .d1--lead {
-  font-size: clamp(2.9rem, 6.6vw, 5.6rem);
-  letter-spacing: -0.042em;
+  font-size: clamp(2.05rem, 4.2vw, 3.55rem);
+  letter-spacing: -0.039em;
 }
 /* acronym lockup — the name at full scale, its expansion set quietly beneath
    it, rather than run on as one line that has to break mid-phrase */
 .hl-expand {
-  font-size: clamp(1.05rem, 2vw, 1.85rem);
+  font-size: clamp(.85rem, 1.35vw, 1.25rem);
   font-weight: 400;
-  letter-spacing: -0.008em;
+  letter-spacing: -0.006em;
   color: var(--ink-2);
 }
 .rv-line--sub { margin-top: clamp(12px, 1.3vw, 22px); }
@@ -682,12 +783,13 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 /* dimmed first line — the light/bold headline pairing from the references */
 .hl-soft { color: var(--ink-2); font-weight: 300; opacity: .85; }
 .hero__copy .lede {
-  font-size: clamp(.92rem, 1.05vw, 1.04rem);
-  max-width: 40ch;
-  line-height: 1.6;
+  font-size: clamp(.82rem, .92vw, .9rem);
+  max-width: 36ch;
+  line-height: 1.64;
 }
-.hero .d1 { margin-bottom: 26px; }
-.hero .lede { max-width: 46ch; }
+.hero .d1 { margin-bottom: 18px; }
+.hero .lede { max-width: 40ch; }
+.hero .eyebrow { font-size: .6rem; margin-bottom: 18px; }
 .hero__side {
   padding-bottom: 8px;
   border-left: 1px solid var(--line);
@@ -884,7 +986,7 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 .split__media::after {
   content: "";
   position: absolute; inset: 0;
-  background: linear-gradient(190deg, transparent 45%, rgba(8,7,10,.55));
+  background: linear-gradient(190deg, transparent 45%, rgba(6,6,7,.55));
   pointer-events: none;
 }
 .media-cap {
@@ -1085,7 +1187,14 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 .cstl__hint, .cstl__panel { display: none; }
 
 /* --- 3D mode --- */
-.cstl.is-3d { height: clamp(430px, 60vh, 620px); }
+/* ----------------------------------------------------------------------
+   The interactive index — callouts riding a rotating armature.
+
+   No object in the middle: the vertices and the lines between them are the
+   whole form. Anything sitting at the centre competed with the labels for the
+   one part of the frame every one of them has to cross.
+   ---------------------------------------------------------------------- */
+.cstl.is-3d { height: clamp(430px, 62vh, 620px); }
 .cstl.is-3d .cstl__nodes { position: absolute; inset: 0; margin: 0; }
 .cstl.is-3d .cstl__nodes > li {
   position: absolute;
@@ -1096,15 +1205,14 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 }
 .cstl.is-3d .cstl__node-b { display: none; }
 
-/* vertex callout — a squared plate with a precision tick on its leading edge,
-   the way a measured callout reads on a drawing */
+/* a measured callout: squared plate, precision tick on the leading edge */
 .cstl.is-3d .cstl__node {
   position: relative;
   padding: 8px 14px;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--glow);
+  border-left: 3px solid var(--ink-2);
   border-radius: 4px;
-  background: rgba(8, 7, 10, .86);
+  background: rgba(6, 6, 7, .88);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   font-family: var(--f-mono);
@@ -1113,13 +1221,14 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   text-transform: uppercase;
   color: var(--ink-2);
   white-space: nowrap;
+  cursor: pointer;
   transition: color .3s var(--e-out), border-color .3s var(--e-out),
               background .3s var(--e-out), letter-spacing .3s var(--e-out);
 }
 /* label sits left of its vertex — move the tick to the facing edge */
 .cstl.is-3d li.is-left .cstl__node {
   border-left: 1px solid var(--line);
-  border-right: 3px solid var(--glow);
+  border-right: 3px solid var(--ink-2);
 }
 .cstl.is-3d .cstl__node:hover,
 .cstl.is-3d .cstl__node:focus-visible,
@@ -1129,10 +1238,6 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   border-color: var(--ink);
   letter-spacing: .2em;
 }
-.cstl.is-3d li:not(.is-left) .cstl__node:hover,
-.cstl.is-3d li:not(.is-left).is-on .cstl__node { border-left-color: var(--glow); }
-.cstl.is-3d li.is-left .cstl__node:hover,
-.cstl.is-3d li.is-left.is-on .cstl__node { border-right-color: var(--glow); }
 
 .cstl.is-3d .cstl__hint {
   display: block;
@@ -1145,44 +1250,51 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   color: var(--ink-4);
 }
 
-/* --- the readout box --- */
+/* --- the readout --- */
 .cstl.is-3d .cstl__panel {
   display: block;
   position: absolute;
   left: 0; top: 0;
-  width: min(320px, 78vw);
-  padding: 20px 22px;
-  border: 1px solid rgba(var(--glow-rgb), .3);
-  border-radius: 4px;
-  background: rgba(9, 8, 11, .93);
+  width: min(330px, 76%);
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(6, 6, 7, .94);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 20px 60px -20px rgba(0,0,0,.9);
   opacity: 0;
-  transform: translateY(6px);
-  transition: opacity .28s var(--e-out), transform .28s var(--e-out);
   pointer-events: none;
-  z-index: 5;
+  transition: opacity .28s var(--e-out);
+  z-index: 200;
 }
-.cstl.is-3d .cstl__panel.is-on { opacity: 1; transform: translateY(0); }
-.cstl__panel h4 {
-  font-family: var(--f-display);
-  font-size: 1.12rem;
-  font-weight: 600;
-  letter-spacing: -0.028em;
-  line-height: 1.15;
-  color: var(--ink);
-  margin-bottom: 9px;
-}
-.cstl__panel p { font-size: .92rem; line-height: 1.55; }
+.cstl.is-3d .cstl__panel.is-on { opacity: 1; }
 .cstl__panel .k {
   display: block;
+  margin-bottom: 9px;
   font-family: var(--f-mono);
   font-size: .6rem;
-  letter-spacing: .16em;
+  letter-spacing: .22em;
   text-transform: uppercase;
-  color: var(--glow);
-  margin-bottom: 10px;
+  color: var(--ink-4);
+}
+.cstl__panel h4 {
+  font-family: var(--f-body);
+  font-size: 1.02rem;
+  font-weight: 500;
+  letter-spacing: -.012em;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.cstl__panel p {
+  margin-top: 7px;
+  font-size: .9rem;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+@media (max-width: 700px) {
+  .cstl.is-3d .cstl__node { font-size: .58rem; padding: 6px 10px; letter-spacing: .12em; }
+  .cstl.is-3d .cstl__panel { width: min(290px, 84vw); padding: 15px 17px; }
 }
 
 @media (max-width: 700px) {
@@ -1335,7 +1447,7 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
 .band__scrim {
   position: absolute; inset: 0; z-index: -1;
   background:
-    linear-gradient(90deg, rgba(8,7,10,.94) 8%, rgba(8,7,10,.6) 52%, rgba(8,7,10,.85)),
+    linear-gradient(90deg, rgba(6,6,7,.94) 8%, rgba(6,6,7,.6) 52%, rgba(6,6,7,.85)),
     linear-gradient(180deg, var(--bg), transparent 22%, transparent 78%, var(--bg));
 }
 
@@ -1578,8 +1690,8 @@ body.menu-open .drawer__links li:nth-child(7) a { transition-delay: .44s; }
   /* copy stacks under the object on narrow screens — darken downward instead */
   .hero__scrim--thin {
     background: linear-gradient(180deg,
-      rgba(8,7,10,.55) 0%, transparent 24%,
-      rgba(8,7,10,.78) 58%, rgba(8,7,10,.94) 78%, var(--bg) 100%);
+      rgba(6,6,7,.55) 0%, transparent 24%,
+      rgba(6,6,7,.78) 58%, rgba(6,6,7,.94) 78%, var(--bg) 100%);
   }
   .hero__aura { left: 50%; top: 38%; }
 }

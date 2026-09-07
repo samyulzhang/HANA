@@ -94,6 +94,26 @@
         if (!child.dataset.rvDelay) child.dataset.rvDelay = (i * step).toFixed(3);
       });
     });
+
+    // Anything already on screen at first paint reveals straight away. The
+    // observer alone can't be trusted with it: its -12% bottom margin is there
+    // to hold a reveal until the element is properly in view, but that pulls the
+    // trigger line above the fold, so content sitting low in the first screen —
+    // a hero's buttons, once the copy is bottom-anchored — clears the viewport
+    // yet never clears the threshold, and stays invisible until you scroll.
+    const reveal = (el) => {
+      const d = parseFloat(el.dataset.rvDelay || "0");
+      if (d) el.style.transitionDelay = d + "s";
+      el.classList.add("in");
+      io.unobserve(el);
+    };
+    requestAnimationFrame(() => {
+      els.forEach((el) => {
+        if (el.classList.contains("in")) return;
+        const r = el.getBoundingClientRect();
+        if (r.top < window.innerHeight && r.bottom > 0) reveal(el);
+      });
+    });
   }
 
   /* ======================================================================
@@ -361,10 +381,19 @@
   }
 
   /* ======================================================================
-     8b. WebGL geometric hero — rotating wireframe HANA sphere (Three.js)
-         Graceful no-op if Three.js failed to load or WebGL is unavailable.
+     8b. Hero form — a lit solid, not a wireframe.
+
+     The whole visual language here comes from one idea: a single hard light
+     raking across a near-black matte body in a dark room. That is what makes
+     the reference read as architecture rather than as a diagram — the form is
+     described almost entirely by the crescent of light on its edge, and by
+     what the light fails to reach.
+
+     Which means the lighting rig, not the geometry, is the design. Every page
+     shares the rig and the material and changes only the primitive, so five
+     different objects still read as five photographs of the same room.
      ====================================================================== */
-  function heroGeometry() {
+  function heroForm() {
     const cvs = $("[data-gl]");
     if (!cvs || REDUCED) return;
     if (typeof THREE === "undefined") return;
@@ -374,298 +403,294 @@
       renderer = new THREE.WebGLRenderer({ canvas: cvs, alpha: true, antialias: true });
     } catch (e) { return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // filmic response so the rim can blow out to white without the midtones
+    // going chalky — the reference has a very long, very dark falloff
+    if (THREE.ACESFilmicToneMapping) {
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+    }
+    if (THREE.sRGBEncoding) renderer.outputEncoding = THREE.sRGBEncoding;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    camera.position.set(0, 0, 10);
-
-    const glow = new THREE.Color(0x57d9ff);
-    const ink = new THREE.Color(0xede8e1);
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 120);
+    camera.position.set(0, 0, 13);
 
     const group = new THREE.Group();
     scene.add(group);
 
-    /* -- shared builders ------------------------------------------------ */
-    const lineMat = (color, opacity) =>
-      new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: opacity });
-    const solidMat = (color, opacity) =>
-      new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity });
+    /* -- the rig ---------------------------------------------------------
+       A key placed BEHIND the subject is what draws the crescent: with the
+       light on the far side, only the sliver of surface turning away from the
+       camera is lit, and the mass in front stays black. A front light would
+       flatten it into a grey ball. */
+    const key = new THREE.DirectionalLight(0xffffff, 5.2);
+    key.position.set(-2.4, 3.0, -7.0);
+    scene.add(key);
 
-    // wireframe outline of a solid (clean silhouette + facet edges)
-    const edges = (geo, color, opacity) =>
-      new THREE.LineSegments(new THREE.EdgesGeometry(geo), lineMat(color, opacity));
+    // a second, colder rim from the opposite side, so the silhouette closes
+    const rim = new THREE.DirectionalLight(0xffffff, 1.9);
+    rim.position.set(3.4, 0.5, -6.0);
+    scene.add(rim);
 
-    const ring = (radius, thickness, color, opacity) =>
-      new THREE.Mesh(new THREE.TorusGeometry(radius, thickness, 8, 128), solidMat(color, opacity));
+    // barely-there front fill: enough to keep the body from reading as a hole
+    const fill = new THREE.DirectionalLight(0xffffff, 0.07);
+    fill.position.set(1.6, -0.8, 6);
+    scene.add(fill);
 
-    // drifting node points on a spherical shell — the motif every page shares
-    function shell(count, radius, jitter, size, opacity) {
-      const pos = new Float32Array(count * 3);
-      for (let i = 0; i < count; i++) {
-        const r = radius + (Math.random() - 0.5) * jitter;
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-        pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-        pos[i * 3 + 2] = r * Math.cos(phi);
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-      return new THREE.Points(g, new THREE.PointsMaterial({
-        color: glow, size: size, transparent: true,
-        opacity: opacity === undefined ? 0.85 : opacity, sizeAttenuation: true
-      }));
+    // a grazing wash from the front-left. A back key alone describes a sphere
+    // beautifully and a flat-sided form not at all — a slab turns its faces away
+    // from the rim and reads as a black hole in the frame. This is angled to
+    // skim those faces without lifting the sphere's front off black.
+    const graze = new THREE.DirectionalLight(0xffffff, 0.55);
+    graze.position.set(-6.0, 2.4, 3.2);
+    scene.add(graze);
+
+    // sky/ground wash — the room itself
+    scene.add(new THREE.HemisphereLight(0xa0a0a0, 0x050505, 0.24));
+
+    /* -- materials -------------------------------------------------------- */
+    const shell = new THREE.MeshStandardMaterial({
+      color: 0x090909, roughness: 0.30, metalness: 0.34
+    });
+    const inlay = new THREE.MeshStandardMaterial({
+      color: 0x939393, roughness: 0.22, metalness: 0.85
+    });
+    const faint = new THREE.MeshStandardMaterial({
+      color: 0x767676, roughness: 0.2, metalness: 0.95,
+      transparent: true, opacity: 0.55
+    });
+
+    /* the single point of light on the body — the whole composition hangs off
+       this one bright pixel, so it is a real emissive object rather than a
+       specular highlight that would drift as the form turns */
+    const pip = new THREE.Mesh(
+      new THREE.SphereGeometry(0.035, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffffff })
+    );
+
+    /* -- soft volumetric bloom, drawn once into a canvas texture ----------- */
+    function haloTexture() {
+      const c = document.createElement("canvas");
+      c.width = c.height = 256;
+      const g = c.getContext("2d").createRadialGradient(128, 128, 0, 128, 128, 128);
+      g.addColorStop(0, "rgba(255,255,255,.55)");
+      g.addColorStop(0.35, "rgba(226,226,226,.16)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 256, 256);
+      return new THREE.CanvasTexture(c);
+    }
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: haloTexture(), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0.9
+    }));
+    halo.scale.set(11, 11, 1);
+    halo.position.set(-0.4, 0.7, -4);
+    group.add(halo);
+
+    /* -- the plinth the object stands on ----------------------------------- */
+    function plinth(r) {
+      const g = new THREE.Group();
+      const disc = new THREE.Mesh(
+        new THREE.RingGeometry(r * 0.62, r * 1.55, 96),
+        new THREE.MeshStandardMaterial({
+          color: 0x0e0e0e, roughness: 0.12, metalness: 0.9,
+          side: THREE.DoubleSide, transparent: true, opacity: 0.85
+        })
+      );
+      disc.rotation.x = -Math.PI / 2;
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(r * 1.5, 0.008, 8, 128), inlay);
+      lip.rotation.x = -Math.PI / 2;
+      g.add(disc, lip);
+      g.position.y = -r * 1.16;
+      return g;
     }
 
-    /* -- per-page form --------------------------------------------------
-       Each page carries its own shape via data-gl="<variant>"; they share
-       the same wireframe language so the site still reads as one system. */
-    const spin = [];                       // [object, dx, dy, dz] each frame
+    /* a band of fine grooves wrapped round a sphere's equator: each ring is
+       sized to the chord at its own height, so they lie ON the surface */
+    function grooves(R, count, spread) {
+      const g = new THREE.Group();
+      for (let i = 0; i < count; i++) {
+        const y = ((i / (count - 1)) - 0.5) * spread * R;
+        const rr = Math.sqrt(Math.max(R * R - y * y, 0.0001)) * 1.011;
+        const t = new THREE.Mesh(new THREE.TorusGeometry(rr, 0.0042, 10, 260), faint);
+        t.rotation.x = -Math.PI / 2;
+        t.position.y = y;
+        g.add(t);
+      }
+      return g;
+    }
+
+    const spin = [];
     const variant = cvs.dataset.gl || "orb";
+    let R = 3.1;
 
-
-
-    if (variant === "shard") {
-      // Company — angular crystal, few clean planes
-      const outer = edges(new THREE.OctahedronGeometry(3.7, 0), glow, 0.72);
-      const core = edges(new THREE.OctahedronGeometry(2.0, 1), ink, 0.36);
-      const r1 = ring(4.3, 0.011, glow, 0.5);
-      r1.rotation.x = Math.PI / 2.6;
-      group.add(outer, core, r1, shell(90, 3.7, 0.3, 0.05));
-      spin.push([outer, 0, 0.0010, 0], [core, 0.0009, -0.0016, 0], [r1, 0, 0, 0.0010]);
-
-    } else if (variant === "knot") {
-      // HANA — one continuous interwoven path: many systems, one architecture
+    if (variant === "knot") {
+      // HANA — one continuous path, drawn as a solid tube
+      R = 3.0;
       const knot = new THREE.Mesh(
-        new THREE.TorusKnotGeometry(2.25, 0.045, 260, 14, 2, 3),
-        solidMat(glow, 0.6)
+        new THREE.TorusKnotGeometry(1.95, 0.2, 320, 26, 2, 3), shell
       );
-      const cage = edges(new THREE.IcosahedronGeometry(3.5, 0), ink, 0.16);
-      group.add(knot, cage, shell(100, 3.5, 0.3, 0.045));
-      spin.push([knot, 0.0007, 0.0012, 0], [cage, 0, -0.0008, 0]);
+      const halo2 = new THREE.Mesh(new THREE.TorusGeometry(3.0, 0.01, 8, 200), faint);
+      halo2.rotation.x = Math.PI / 2.1;
+      group.add(knot, halo2, plinth(2.6));
+      pip.position.set(0.55, 0.15, 2.15);
+      group.add(pip);
+      spin.push([knot, 0.0009, 0.0013, 0], [halo2, 0, 0.0007, 0]);
 
     } else if (variant === "lattice") {
-      // Systems — orthogonal structure, nested frames on a common axis
-      const o = edges(new THREE.BoxGeometry(4.1, 4.1, 4.1), glow, 0.68);
-      const m = edges(new THREE.BoxGeometry(2.9, 2.9, 2.9), ink, 0.42);
-      m.rotation.set(Math.PI / 4, Math.PI / 4, 0);
-      const i = edges(new THREE.BoxGeometry(1.6, 1.6, 1.6), glow, 0.6);
-      group.add(o, m, i, shell(90, 3.6, 0.35, 0.045));
-      spin.push([o, 0, 0.0008, 0], [m, 0.0011, -0.0013, 0], [i, 0, 0.0022, 0.0008]);
+      // Systems — a monolith, and the two smaller masses it governs
+      R = 3.0;
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(1.9, 4.4, 1.9), shell);
+      slab.rotation.y = Math.PI / 4.4;
+      const a = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.85), shell);
+      a.position.set(-2.15, -1.55, 0.7); a.rotation.y = -Math.PI / 5;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), shell);
+      b.position.set(2.0, -1.85, -0.4); b.rotation.y = Math.PI / 3.5;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(1.94, 0.012, 1.94), inlay);
+      band.position.y = 0.55; band.rotation.y = Math.PI / 4.4;
+      group.add(slab, a, b, band, plinth(2.5));
+      pip.position.set(0.35, 0.55, 1.0);
+      group.add(pip);
+      spin.push([slab, 0, 0.00042, 0], [band, 0, 0.00042, 0],
+                [a, 0.0008, 0.0011, 0], [b, -0.001, 0.0013, 0]);
 
     } else if (variant === "meridian") {
-      // Research & Insights — a measured grid: latitude / longitude, not facets
-      const globe = edges(new THREE.SphereGeometry(3.25, 22, 13), glow, 0.34);
-      const core = edges(new THREE.IcosahedronGeometry(1.5, 0), ink, 0.28);
-      const r1 = ring(4.2, 0.008, glow, 0.4);
-      r1.rotation.x = Math.PI / 2;
-      group.add(globe, core, r1, shell(110, 3.25, 0.25, 0.05));
-      spin.push([globe, 0, 0.0011, 0], [core, 0.0008, -0.0018, 0], [r1, 0, 0, 0.0009]);
+      // Research — a faceted mass, cut rather than moulded
+      R = 3.05;
+      const gem = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 1), shell);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.05, 0.009, 8, 220), faint);
+      ring.rotation.x = -Math.PI / 2;
+      const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.72, 0.007, 8, 220), faint);
+      ring2.rotation.set(-Math.PI / 2.35, 0.3, 0);
+      group.add(gem, ring, ring2, plinth(2.6));
+      pip.position.set(-0.2, 0.35, 2.45);
+      group.add(pip);
+      spin.push([gem, 0.0004, 0.0009, 0], [ring, 0, 0.0006, 0], [ring2, 0, -0.0005, 0]);
 
     } else if (variant === "portal") {
-      // Contact — an open aperture rather than a closed solid
-      const r1 = ring(3.5, 0.016, glow, 0.72);
-      const r2 = ring(2.95, 0.011, ink, 0.42);
-      r2.rotation.x = Math.PI / 3;
-      const r3 = ring(2.4, 0.009, glow, 0.55);
-      r3.rotation.y = Math.PI / 3;
-      const core = edges(new THREE.IcosahedronGeometry(0.95, 0), glow, 0.65);
-      group.add(r1, r2, r3, core, shell(80, 3.5, 0.4, 0.045));
-      spin.push([r1, 0, 0, 0.0009], [r2, 0.0012, 0, 0], [r3, 0, 0.0014, 0], [core, 0.002, 0.002, 0]);
+      // Contact — an aperture: a ring standing open, nothing inside it
+      R = 3.05;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.26, 28, 200), shell);
+      const inner = new THREE.Mesh(new THREE.TorusGeometry(2.09, 0.012, 8, 200), inlay);
+      const outer = new THREE.Mesh(new THREE.TorusGeometry(3.0, 0.008, 8, 220), faint);
+      outer.rotation.x = -Math.PI / 2.6;
+      group.add(ring, inner, outer, plinth(2.5));
+      pip.position.set(0, 0, 0);
+      group.add(pip);
+      spin.push([ring, 0, 0, 0.0005], [inner, 0, 0, -0.0009], [outer, 0, 0.0008, 0]);
 
     } else {
-      // Home — the flagship geodesic orb with gyroscope rings
-      const outer = edges(new THREE.IcosahedronGeometry(3.3, 1), glow, 0.55);
-      const core = edges(new THREE.IcosahedronGeometry(1.85, 0), ink, 0.3);
-      const r1 = ring(4.05, 0.009, glow, 0.45);
-      r1.rotation.x = Math.PI / 2.3;
-      const r2 = ring(4.45, 0.007, ink, 0.2);
-      r2.rotation.set(Math.PI / 2.8, Math.PI / 3, 0);
-      const pts = shell(120, 3.3, 0.22, 0.05);
-      group.add(outer, core, r1, r2, pts);
-      spin.push([outer, 0, 0.0009, 0], [core, 0.0007, -0.0016, 0],
-                [r1, 0, 0, 0.0011], [r2, 0, 0, -0.0008], [pts, 0, 0.0004, 0]);
+      // Home — the sphere from the reference, banded at its equator
+      R = 3.15;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(R, 96, 72), shell);
+      const band = grooves(R, 4, 0.24);
+      group.add(ball, band, plinth(R));
+      pip.position.set(0.12, 0.05, R * 0.995);
+      group.add(pip);
+      spin.push([band, 0, 0.00055, 0], [ball, 0, 0.00016, 0]);
     }
 
-    // Measure what was actually built rather than guessing a scale.
-    // A bounding sphere is far too conservative here — it assumes a ring
-    // presents face-on, which the fixed tilts never allow — so instead sample
-    // the geometry and take the worst vertical extent over a full rotation.
-    // Exact, and self-correcting for any shape added later.
-    const form = (function () {
+    /* a tight glow right at the pip, so it reads as a source and not a dot */
+    const spark = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: haloTexture(), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0.55
+    }));
+    spark.scale.set(1.5, 1.5, 1);
+    spark.position.copy(pip.position);
+    group.add(spark);
+
+    /* The assembly's real bounds, plinth and all. Fitting to the primitive's
+       own radius ignored everything built around it — the plinth sits well
+       below the form's centre and reaches wider than it does, so the object
+       kept landing hard on the fold. Sprites are skipped: the bloom is
+       deliberately larger than the object and would swamp the box. */
+    const bounds = (function () {
       group.updateMatrixWorld(true);
-
-      // Sample the form into a point cloud that covers every pose it will ever
-      // strike: each child that animates is sampled around its own spin axes,
-      // so a ring that swings edge-on to face-on is measured at its widest,
-      // not at whatever pose it happened to hold on frame one. Without this the
-      // fit is computed from a silhouette the shape immediately grows out of.
-      const spinOf = new Map();
-      for (let i = 0; i < spin.length; i++) spinOf.set(spin[i][0], spin[i]);
-
-      const cloud = [];
-      const v = new THREE.Vector3();
-      const m = new THREE.Matrix4();
-      const e = new THREE.Euler();
-      const q = new THREE.Quaternion();
-      const STEPS = 6, TURN = (Math.PI * 2) / STEPS;
-      const range = (on) => {
-        if (!on) return [0];
-        const out = [];
-        for (let i = 0; i < STEPS; i++) out.push(i * TURN);
-        return out;
-      };
-
-      group.children.forEach((o) => {
-        const s = spinOf.get(o);
-        const rx = range(s && s[1]), ry = range(s && s[2]), rz = range(s && s[3]);
-        o.traverse((c) => {
-          const g = c.geometry;
-          if (!g || !g.attributes || !g.attributes.position) return;
-          const a = g.attributes.position;
-          const stride = Math.max(1, Math.floor(a.count / 140));
-          for (let i = 0; i < rx.length; i++)
-            for (let j = 0; j < ry.length; j++)
-              for (let k = 0; k < rz.length; k++) {
-                e.set(o.rotation.x + rx[i], o.rotation.y + ry[j],
-                      o.rotation.z + rz[k], o.rotation.order);
-                q.setFromEuler(e);
-                m.compose(o.position, q, o.scale);
-                if (c !== o) m.multiply(c.matrix);
-                for (let n = 0; n < a.count; n += stride) {
-                  cloud.push(v.fromBufferAttribute(a, n).applyMatrix4(m).clone());
-                }
-              }
-        });
-      });
-      if (!cloud.length) return new Float32Array(0);
-
-      // Thin the cloud to its silhouette envelope: keep only the furthest point
-      // in each direction bucket. A few hundred points then bound the whole form
-      // for any rotation, which is what makes the exact fit below cheap enough
-      // to re-run on every resize.
-      const BT = 32, BP = 16, NB = BT * BP;
-      const hull = new Float32Array(NB * 3), hullR = new Float32Array(NB);
-      for (let i = 0; i < cloud.length; i++) {
-        const p = cloud[i];
-        const rr = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        if (rr < 1e-6) continue;
-        let bt = Math.floor(((Math.atan2(p.z, p.x) + Math.PI) / (Math.PI * 2)) * BT);
-        let bp = Math.floor((Math.acos(Math.max(-1, Math.min(1, p.y / rr))) / Math.PI) * BP);
-        if (bt >= BT) bt = BT - 1;
-        if (bp >= BP) bp = BP - 1;
-        const b = bt * BP + bp;
-        if (rr > hullR[b]) {
-          hullR[b] = rr;
-          hull[b * 3] = p.x; hull[b * 3 + 1] = p.y; hull[b * 3 + 2] = p.z;
-        }
-      }
-
-      // the group itself sweeps rotation.y continuously and tilts on x with the
-      // pointer, so bake that whole range into the envelope as well — the result
-      // is every position any part of the form can ever occupy
-      const probe = new THREE.Object3D();
-      const out = [];
-      for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
-        for (let x = -0.3; x <= 0.301; x += 0.15) {
-          probe.rotation.set(x, a, 0);
-          probe.updateMatrix();
-          const e0 = probe.matrix.elements;
-          for (let b = 0; b < NB; b++) {
-            if (!hullR[b]) continue;
-            const px = hull[b * 3], py = hull[b * 3 + 1], pz = hull[b * 3 + 2];
-            out.push(e0[0] * px + e0[4] * py + e0[8] * pz,
-                     e0[1] * px + e0[5] * py + e0[9] * pz,
-                     e0[2] * px + e0[6] * py + e0[10] * pz);
-          }
-        }
-      }
-      return new Float32Array(out);
+      const box = new THREE.Box3();
+      group.traverse((o) => { if (o.isMesh) box.expandByObject(o); });
+      return box.isEmpty() ? null : box;
     })();
 
+    /* -- fit ---------------------------------------------------------------
+       The form is a solid now, so its silhouette barely changes as it turns —
+       no envelope probing needed. It is sized off its own radius against the
+       frame the nav leaves visible, and sits on the centre line. */
     function resize() {
       const r = cvs.getBoundingClientRect();
       const w = r.width, h = r.height;
       if (!w || !h) return;
       renderer.setSize(w, h, false);
-      const aspect = w / h;
-      camera.aspect = aspect;
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
 
-      // Centre the form in the frame the viewer can actually SEE, then grow it
-      // until the first of the four borders stops it. The visible frame is the
-      // canvas minus whatever the fixed nav covers of its top — a form centred
-      // in the raw canvas reads as sitting high, because its crown is behind
-      // the nav. Everything below is derived, so it stays true at any size.
-      if (!form.length) return;
-      const tanHalf = Math.tan((camera.fov * Math.PI / 180) / 2);
-      const camZ = camera.position.z;
-      const k = (h / 2) / tanHalf;      // world→px, before the perspective divide
-
-      // how much of the canvas top the nav hides
       const navEl = document.querySelector(".nav");
-      const navBottom = navEl ? navEl.getBoundingClientRect().bottom : 74;
-      const occTop = Math.min(Math.max(navBottom - r.top, 0), h * 0.5);
+      const navB = navEl ? navEl.getBoundingClientRect().bottom : 74;
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      const occTop = Math.min(Math.max(navB - (r.top + scrollY), 0), h * 0.5);
 
-      // sit the centre of the form on the centre of the visible band; on wide
-      // screens push it right (world units, independent of scale) so the copy
-      // column on the left sits against clean space rather than the shape
-      const MARGIN = 0.965;
-      const halfH = tanHalf * camZ;
-      const oy = -(occTop / 2) * camZ / k;
-      const ox = aspect >= 1.15 ? halfH * aspect * 0.30 : 0;
-      group.position.x = ox;
-      group.position.y = oy;
+      const tanHalf = Math.tan((camera.fov * Math.PI / 180) / 2);
+      const halfH = tanHalf * camera.position.z;
+      const k = (h / 2) / tanHalf;
 
-      // the borders the form has to stay inside, in px from the canvas centre
-      const lim = {
-        up:    (h / 2 - occTop) * MARGIN,
-        down:  (h / 2) * MARGIN,
-        side:  (w / 2) * MARGIN
-      };
+      // The object stands in the right-hand half, the copy in the left. It is
+      // placed against the CONTENT COLUMN rather than the viewport, so it sits
+      // on the same grid the copy is measured from — on a wide monitor the copy
+      // starts well inside the frame, and a viewport-centred object would drift
+      // away from it.
+      const band = h - occTop;
+      const px = h / (2 * halfH);                       // px per world unit
 
-      // Solve for the largest scale that keeps every sampled point inside those
-      // borders. Perspective makes this non-linear — the near face of the form
-      // magnifies as it grows — so a ratio can't answer it; a bisection can, and
-      // it converges in a handful of steps on a few thousand points. The offset
-      // is baked into sx/sy so a rightward push automatically shrinks the form
-      // if that's what it takes to keep its right edge on-frame.
-      const fits = (s) => {
-        for (let i = 0; i < form.length; i += 3) {
-          const d = camZ - s * form[i + 2];
-          if (d < 0.25) return false;
-          const sy = -k * (s * form[i + 1] + oy) / d;   // +down, from centre
-          const sx =  k * (s * form[i] + ox) / d;
-          if (sy < -lim.up || sy > lim.down) return false;
-          if (sx < -lim.side || sx > lim.side) return false;
-        }
-        return true;
-      };
-      let lo = 0, hi = 4;
-      if (fits(hi)) { group.scale.setScalar(hi); return; }
-      for (let i = 0; i < 22; i++) {
-        const mid = (lo + hi) / 2;
-        if (fits(mid)) lo = mid; else hi = mid;
+      const SEAT = 0.445, FILLS = 0.62, ZONE = 0.46;
+
+      let cx = r.left + w * 0.74, zoneW = w * ZONE;
+      const wrapEl = cvs.parentElement && cvs.parentElement.querySelector(".wrap");
+      if (wrapEl) {
+        const wr = wrapEl.getBoundingClientRect();
+        const pad = parseFloat(getComputedStyle(wrapEl).paddingLeft) || 0;
+        const cl = wr.left + pad, cw = Math.max(wr.width - pad * 2, 1);
+        cx = cl + cw * 0.735;                           // centre of the right half
+        zoneW = cw * ZONE;
       }
-      group.scale.setScalar(lo || 0.5);
+      group.position.x = (cx - (r.left + w / 2)) / px;
+
+      // size and seat from the measured bounds, so what gets centred and what
+      // gets fitted is the thing you can actually see
+      const bh = bounds ? (bounds.max.y - bounds.min.y) : R * 2;
+      const bw = bounds ? Math.max(-bounds.min.x, bounds.max.x) * 2 : R * 2;
+      const cy = bounds ? (bounds.max.y + bounds.min.y) / 2 : 0;
+
+      const sc = Math.min((band * FILLS) / px / bh, zoneW / px / bw);
+      group.scale.setScalar(sc);
+      group.position.y = -((occTop + band * SEAT) - h / 2) / px - cy * sc;
     }
 
-    const mouse = { x: 0, y: 0 };
-    const target = { x: 0, y: 0 };
+    /* -- motion ------------------------------------------------------------
+       The pointer moves the KEY LIGHT as well as the form. That is the whole
+       interaction: the crescent travels around the body as you move, so the
+       object is read by relighting it rather than by spinning it. */
+    const aim = { x: 0, y: 0 }, at = { x: 0, y: 0 };
     if (!COARSE) {
       window.addEventListener("mousemove", (e) => {
-        mouse.x = (e.clientX / innerWidth) * 2 - 1;
-        mouse.y = (e.clientY / innerHeight) * 2 - 1;
+        aim.x = (e.clientX / innerWidth) * 2 - 1;
+        aim.y = (e.clientY / innerHeight) * 2 - 1;
       }, { passive: true });
     }
 
     let running = true, raf = 0;
     function frame(t) {
       raf = 0;
-      target.x += (mouse.y * 0.26 - target.x) * 0.04;
-      target.y += (mouse.x * 0.34 - target.y) * 0.04;
-      group.rotation.x = target.x;
-      group.rotation.y = t * 0.00009 + target.y;
+      at.x += (aim.x - at.x) * 0.045;
+      at.y += (aim.y - at.y) * 0.045;
+
+      group.rotation.y = t * 0.00004 + at.x * 0.20;
+      group.rotation.x = at.y * 0.10;
+
+      key.position.set(-2.4 + at.x * 3.0, 3.0 - at.y * 2.4, -7.0);
+      graze.position.set(-6.0 + at.x * 2.4, 2.4 - at.y * 1.4, 3.2);
+      rim.position.set(3.4 + at.x * 2.0, 0.5 - at.y * 1.1, -6.0);
+
       for (let i = 0; i < spin.length; i++) {
         const s = spin[i];
         s[0].rotation.x += s[1];
@@ -678,6 +703,7 @@
 
     let rt = 0;
     window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(resize, 180); });
+    window.addEventListener("load", () => resize());
 
     if ("IntersectionObserver" in window) {
       new IntersectionObserver((es) => es.forEach((en) => {
@@ -746,10 +772,21 @@
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
       camera.position.set(0, 0, 6.2);
-      const glow = new THREE.Color(0x57d9ff);
-      const ink = new THREE.Color(0xede8e1);
+      const glow = new THREE.Color(0xffffff);
+      const ink = new THREE.Color(0xb4b4b4);
       const group = new THREE.Group();
       scene.add(group);
+
+      /* the same rig the hero uses, so the diagram belongs to the same room:
+         a key from behind to draw the rim, a grazing wash for the flat facets,
+         and a low ambient so nothing goes fully to paper-black */
+      const ckey = new THREE.DirectionalLight(0xffffff, 4.0);
+      ckey.position.set(-2.0, 2.6, -5.5);
+      const cgraze = new THREE.DirectionalLight(0xffffff, 0.95);
+      cgraze.position.set(-5.0, 2.0, 3.0);
+      const crim = new THREE.DirectionalLight(0xffffff, 1.6);
+      crim.position.set(3.6, 0.8, -4.5);
+      scene.add(ckey, cgraze, crim, new THREE.HemisphereLight(0xa8a8a8, 0x060606, 0.34));
 
       const R = 2.55;
       const tilt = spec.tilt || [0.35, 0.15];
@@ -779,17 +816,73 @@
         pos = spec.verts.map((v) => new THREE.Vector3(v[0], v[1], v[2]).normalize().multiplyScalar(R));
         spec.edges.forEach((e) => { linePts.push(pos[e[0]].clone(), pos[e[1]].clone()); });
       }
-      const lineGeo = new THREE.BufferGeometry().setFromPoints(linePts);
-      group.add(new THREE.LineSegments(
-        lineGeo,
-        new THREE.LineBasicMaterial({ color: glow, transparent: true, opacity: spec.curve ? 0.42 : 0.3 })
-      ));
+      /* The armature is drawn as SUBSTANCE, not as a line.
+
+         A LineBasicMaterial is unlit — it is a flat stroke of colour, and no
+         lighting rig can touch it, which is why this section never belonged to
+         the same world as the hero. Rendered as thin tubes it becomes real
+         geometry: the key rakes along it, a specular highlight travels the
+         length as the form turns, and it picks up the room the way the hero
+         objects do. Same armature, same silhouette — only the material is new. */
+      const filament = new THREE.MeshStandardMaterial({
+        color: 0xa2a8ae, roughness: 0.3, metalness: 0.9
+      });
+      if (spec.curve) {
+        const path = new THREE.CatmullRomCurve3(
+          linePts.filter((_, n) => n % 2 === 0), true, "catmullrom", 0.5
+        );
+        group.add(new THREE.Mesh(new THREE.TubeGeometry(path, 520, 0.019, 12, true), filament));
+      } else {
+        // one slim cylinder per edge, aimed from vertex to vertex
+        const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3();
+        for (let n = 0; n < linePts.length; n += 2) {
+          const a2 = linePts[n], b2 = linePts[n + 1];
+          const len = a2.distanceTo(b2);
+          const tube = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.019, 0.019, len, 12, 1, true), filament
+          );
+          tube.position.copy(a2).add(b2).multiplyScalar(0.5);
+          tube.quaternion.setFromUnitVectors(up, dir.copy(b2).sub(a2).normalize());
+          group.add(tube);
+        }
+      }
 
       // a marker at every vertex that carries information
+      /* a soft source in the scene, off to one side — the same bloom the hero
+         forms carry, so the light in this section reads as coming from
+         somewhere rather than being painted on */
+      function cHalo() {
+        const cv = document.createElement("canvas");
+        cv.width = cv.height = 256;
+        const ctx = cv.getContext("2d");
+        const g2 = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+        g2.addColorStop(0, "rgba(255,255,255,.5)");
+        g2.addColorStop(0.35, "rgba(226,226,226,.14)");
+        g2.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = g2;
+        ctx.fillRect(0, 0, 256, 256);
+        return new THREE.CanvasTexture(cv);
+      }
+      const source = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: cHalo(), transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, opacity: 0.5
+      }));
+      source.scale.set(6.2, 6.2, 1);
+      source.position.set(-1.5, 1.1, -2.6);
+      scene.add(source);
+      // and a real lamp at the same spot, so the filaments actually catch it
+      const lamp = new THREE.PointLight(0xffffff, 2.4, 14, 2);
+      lamp.position.set(-1.5, 1.1, -1.6);
+      scene.add(lamp);
+
+      // vertices are polished, not painted — they take a highlight from the rig
       const dots = pos.slice(0, items.length).map((p) => {
         const d = new THREE.Mesh(
-          new THREE.SphereGeometry(0.075, 16, 16),
-          new THREE.MeshBasicMaterial({ color: glow, transparent: true, opacity: 0.85 })
+          new THREE.SphereGeometry(0.082, 20, 20),
+          new THREE.MeshStandardMaterial({
+            color: 0xf2f2f2, roughness: 0.12, metalness: 0.5,
+            emissive: 0x8f8f8f, emissiveIntensity: 0.55
+          })
         );
         d.position.copy(p);
         group.add(d);
@@ -808,51 +901,21 @@
         group.add(hit);
         return hit;
       });
-      /* --- ornament -------------------------------------------------------
-         Layers that echo the hero forms. Deliberately kept INSIDE the ring of
-         information points and at low opacity: the perimeter is where the
-         labels and their dots live, and nothing here may compete with them. */
+      /* No centre object. The vertices and the armature between them are the
+         content; anything in the middle competed with the labels for the one
+         part of the frame they all have to cross. `decor` stays so the frame
+         loop keeps its shape. */
       const decor = [];
-      const ornament = (obj, dx, dy, dz) => { group.add(obj); decor.push([obj, dx, dy, dz]); };
-
-      // counter-rotating core
-      ornament(new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(0.6, 0)),
-        new THREE.LineBasicMaterial({ color: ink, transparent: true, opacity: 0.28 })
-      ), 0.0009, -0.0017, 0);
-
-      // inner gyroscope rings
-      const gyro = (rad, thick, color, op, rx, ry) => {
-        const m = new THREE.Mesh(
-          new THREE.TorusGeometry(rad, thick, 8, 96),
-          new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: op })
-        );
-        m.rotation.set(rx, ry, 0);
-        return m;
-      };
-      ornament(gyro(1.2, 0.006, glow, 0.32, Math.PI / 2.2, 0), 0, 0, 0.0013);
-      ornament(gyro(1.55, 0.004, ink, 0.2, Math.PI / 2.9, Math.PI / 3), 0, 0, -0.0009);
-
-      // faint interior haze, well inside the information points
-      const hazeN = 70, hazePos = new Float32Array(hazeN * 3);
-      for (let i = 0; i < hazeN; i++) {
-        const hr = 1.9 + (Math.random() - 0.5) * 0.55;
-        const th = Math.random() * Math.PI * 2;
-        const ph = Math.acos(2 * Math.random() - 1);
-        hazePos[i * 3] = hr * Math.sin(ph) * Math.cos(th);
-        hazePos[i * 3 + 1] = hr * Math.sin(ph) * Math.sin(th);
-        hazePos[i * 3 + 2] = hr * Math.cos(ph);
-      }
-      const hazeGeo = new THREE.BufferGeometry();
-      hazeGeo.setAttribute("position", new THREE.BufferAttribute(hazePos, 3));
-      ornament(new THREE.Points(hazeGeo, new THREE.PointsMaterial({
-        color: glow, size: 0.03, transparent: true, opacity: 0.45, sizeAttenuation: true
-      })), 0, 0.0006, 0);
 
       const ray = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
       let inside = false, overLabel = -1, overVertex = -1;
 
+      // the row number lives on the <li>; the button is what carries the style
+      items.forEach((li) => {
+        const btn = $(".cstl__node", li);
+        if (btn && li.dataset.k) btn.setAttribute("data-k", li.dataset.k);
+      });
       box.classList.add("is-3d");
 
       /* ---- interaction ---- */
@@ -861,26 +924,30 @@
         if (active === i) return;
         active = i;
         items.forEach((li, n) => li.classList.toggle("is-on", n === i));
-        dots.forEach((d, n) => d.scale.setScalar(n === i ? 1.9 : 1));
+        dots.forEach((d, n) => {
+          d.scale.setScalar(n === i ? 2.0 : 1);
+          d.material.emissiveIntensity = n === i ? 1.6 : 0.55;
+        });
         if (!panel) return;
         if (i < 0) { panel.classList.remove("is-on"); return; }
         const li = items[i];
         const t = $(".cstl__node-t", li);
-        const b = $(".cstl__node-b", li);
+        const bd = $(".cstl__node-b", li);
         panel.textContent = "";
         if (li.dataset.k) {
           const k = document.createElement("span");
           k.className = "k"; k.textContent = li.dataset.k; panel.appendChild(k);
         }
-        const h = document.createElement("h4");
-        h.textContent = t ? t.textContent : "";
-        panel.appendChild(h);
-        if (b) {
-          const p = document.createElement("p");
-          p.textContent = b.textContent;
-          panel.appendChild(p);
+        const hh = document.createElement("h4");
+        hh.textContent = t ? t.textContent : "";
+        panel.appendChild(hh);
+        if (bd) {
+          const pp = document.createElement("p");
+          pp.textContent = bd.textContent;
+          panel.appendChild(pp);
         }
         panel.classList.add("is-on");
+        place();
       }
 
       // label and vertex are two ways into the same state; the label wins
@@ -889,6 +956,9 @@
 
       items.forEach((li, i) => {
         const btn = $(".cstl__node", li) || li;
+        // the pointer target is the whole ROW, because the row is what
+        // highlights — binding this to the button alone left most of the
+        // highlighted area dead, including the number and the description
         btn.addEventListener("mouseenter", () => { overLabel = i; refresh(); });
         btn.addEventListener("mouseleave", () => { if (overLabel === i) { overLabel = -1; refresh(); } });
         btn.addEventListener("focus", () => { overLabel = i; refresh(); });
@@ -942,6 +1012,25 @@
       // project each vertex to screen space and park its label there
       const v = new THREE.Vector3();
       const sides = items.map(function () { return 1; });
+      /* The labels are no longer pinned to the projected vertices.
+
+         That pattern cannot be made to work: the anchors are points on a
+         rotating 3-D form, so they drift, bunch and cross the middle, and every
+         fix for one collision creates another. Worse, it hid each item's
+         description behind a hover — the content was there and unreadable.
+
+         The list is now a list: numbered rows, title and description both
+         visible, in reading order, working without JavaScript. The form keeps
+         its job as the visual and gains a real one — hovering a row lights that
+         row's point on the object, and hovering a point lights its row. The
+         interaction survives; the content stops depending on it. */
+      /* Each label sits on its own vertex. Nothing is displaced to avoid a
+         neighbour: the moment a label is moved off its point, the pairing has
+         to be re-explained with a leader, and a screen full of leaders reads
+         as clutter. Labels close to their points, occasionally overlapping,
+         is the more legible trade — so the only thing decided here is which
+         SIDE of its vertex a label sits on, with hysteresis so it doesn't
+         flicker as the form turns. */
       function place() {
         for (let i = 0; i < items.length; i++) {
           v.copy(pos[i]).applyMatrix4(group.matrixWorld).project(camera);
@@ -949,22 +1038,25 @@
           const y = (-v.y * 0.5 + 0.5) * h;
           const depth = Math.min(Math.max((v.z + 1) / 2, 0), 1);   // 0 near → 1 far
           const li = items[i];
-          // fan the label away from the centre so it never covers its own
-          // vertex; hysteresis stops it flip-flopping as the form rotates
+
           const rel = x / w - 0.5;
-          if (rel > 0.06) sides[i] = 1; else if (rel < -0.06) sides[i] = -1;
-          const off = x + sides[i] * 18;
+          if (rel > 0.05) sides[i] = 1; else if (rel < -0.05) sides[i] = -1;
+
+          const off = x + sides[i] * 16;
           li.style.transform =
             (sides[i] < 0 ? "translate(-100%,-50%) " : "translate(0,-50%) ") +
             "translate(" + off.toFixed(1) + "px," + y.toFixed(1) + "px)";
-          // the accent tick always faces the vertex it belongs to
           li.classList.toggle("is-left", sides[i] < 0);
-          li.style.opacity = (1 - depth * 0.62).toFixed(2);
+          // depth does the ordering: a label in front of the form covers one
+          // behind it, which is the natural way to read two that coincide
+          li.style.opacity = (1 - depth * 0.5).toFixed(2);
           li.style.zIndex = String(100 - Math.round(depth * 100));
+
           if (i === active && panel) {
             const pw = panel.offsetWidth, ph = panel.offsetHeight;
-            let px = x + 26, py = y - ph / 2;
-            if (px + pw > w - 8) px = x - 26 - pw;
+            let px = x + sides[i] * 26;
+            if (sides[i] < 0) px -= pw;
+            let py = y - ph / 2;
             px = Math.max(8, Math.min(px, w - pw - 8));
             py = Math.max(8, Math.min(py, h - ph - 8));
             panel.style.transform = "translate(" + px.toFixed(1) + "px," + py.toFixed(1) + "px)";
@@ -1265,7 +1357,7 @@
   /* ---------------------------------------------------------------- init */
   function init() {
     nav(); progress(); reveals(); heroLines(); decode(); parallax();
-    cardGlow(); counters(); network(); heroGeometry(); constellations();
+    cardGlow(); counters(); network(); heroForm(); constellations();
     field(); videos(); marquee();
     forms(); insightFilters(); year();
     document.documentElement.classList.add("js-ready");
